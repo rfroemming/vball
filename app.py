@@ -31,48 +31,58 @@ if uploaded_file is not None:
 
     st.info("💡 **Tip:** Play, pause, or scrub the video. The live position display tracks your exact spot.")
 
-    # HTML Video Player + Live Position Streamer Component
-    player_html = f"""
-    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
-        <video id="vid" width="100%" controls style="border-radius: 8px;">
-            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-        
-        <!-- Live Position Display Box -->
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
-            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
-            <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 20px; font-weight: bold;">0.000 s</span>
-        </div>
-    </div>
-    
-    <script>
-        const video = document.getElementById('vid');
-        const timeDisplay = document.getElementById('time-display');
-
-        video.addEventListener('timeupdate', function() {{
-            const currentTime = video.currentTime;
-            timeDisplay.innerText = currentTime.toFixed(3) + " s";
+    # Custom component wrapper to receive live playback time back into Python
+    def video_player_with_live_time(b64_data):
+        component_code = f"""
+        <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
+            <video id="vid" width="100%" controls style="border-radius: 8px;">
+                <source src="data:video/mp4;base64,{b64_data}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
             
-            // Post message back to Streamlit with current playback time
-            window.parent.postMessage({{
-                isStreamlitMessage: true, 
-                type: 'streamlit:setComponentValue', 
-                value: currentTime
-            }}, "*");
-        }});
-    </script>
-    """
-    
-    # Render component and capture returned time updates safely
-    component_time = components.html(player_html, height=560)
-    
-    if component_time is not None:
-        st.session_state.last_video_time = float(component_time)
+            <!-- Live Position Display Box -->
+            <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
+                <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
+                <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 20px; font-weight: bold;">0.000 s</span>
+            </div>
+        </div>
+        
+        <script>
+            const video = document.getElementById('vid');
+            const timeDisplay = document.getElementById('time-display');
+
+            video.addEventListener('timeupdate', function() {{
+                const currentTime = video.currentTime;
+                timeDisplay.innerText = currentTime.toFixed(3) + " s";
+                
+                // Send current playback time securely to Streamlit component value
+                window.Streamlit.setComponentValue(currentTime);
+            }});
+            
+            // Notify Streamlit that the component is ready
+            window.Streamlit.setFrameHeight(380);
+        </script>
+        """
+        # Using components.declare_v1 or standard html with return value tracking via standard bridge
+        return components.html(component_code, height=560)
+
+    # Render the interactive video player component
+    video_player_with_live_time(video_base64)
 
     st.markdown("---")
 
-    # Native Python Capture Buttons using safely stored session state time
+    # Alternative precise slider/number tracker sync for user capture
+    current_slider_pos = st.slider(
+        "🎥 Timeline Position Sync Tracker", 
+        min_value=0.0, 
+        max_value=60.0, 
+        value=float(st.session_state.last_video_time), 
+        step=0.001,
+        format="%.3f s"
+    )
+    st.session_state.last_video_time = current_slider_pos
+
+    # Native Python Capture Buttons
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("📍 Capture Current as Mark Hit", use_container_width=True, type="primary"):

@@ -8,11 +8,13 @@ st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="center
 
 st.markdown("### 🏐 Video Analysis Dashboard")
 
-# Initialize Session State variables for timestamps
+# Initialize Session State variables
 if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
     st.session_state.landing_time = 0.0
+if "last_video_time" not in st.session_state:
+    st.session_state.last_video_time = 0.0
 
 # 1. File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
@@ -22,12 +24,12 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Read video bytes and encode to base64 for the custom HTML player display
+    # Read video bytes and encode to base64
     with open(video_path, "rb") as f:
         video_bytes = f.read()
     video_base64 = base64.b64encode(video_bytes).decode('utf-8')
 
-    st.info("💡 **Tip:** Play, pause, or scrub the video. The live position display will track your exact spot.")
+    st.info("💡 **Tip:** Play, pause, or scrub the video. The live position display tracks your exact spot.")
 
     # HTML Video Player + Live Position Streamer Component
     player_html = f"""
@@ -48,12 +50,11 @@ if uploaded_file is not None:
         const video = document.getElementById('vid');
         const timeDisplay = document.getElementById('time-display');
 
-        // Real-time listener updating the display box as video plays/scrubs
         video.addEventListener('timeupdate', function() {{
             const currentTime = video.currentTime;
             timeDisplay.innerText = currentTime.toFixed(3) + " s";
             
-            // Send current timestamp back to Streamlit state continuously
+            // Post message back to Streamlit with current playback time
             window.parent.postMessage({{
                 isStreamlitMessage: true, 
                 type: 'streamlit:setComponentValue', 
@@ -63,28 +64,28 @@ if uploaded_file is not None:
     </script>
     """
     
-    # Renders the visible video and handles live time passing back to Python variable 'current_pos'
-    current_pos = components.html(player_html, height=530)
+    # Render component and capture returned time updates safely
+    component_time = components.html(player_html, height=560)
     
-    if current_pos is None:
-        current_pos = 0.0
+    if component_time is not None:
+        st.session_state.last_video_time = float(component_time)
 
     st.markdown("---")
 
-    # Native Python Capture Buttons leveraging the live video position
+    # Native Python Capture Buttons using safely stored session state time
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
         if st.button("📍 Capture Current as Mark Hit", use_container_width=True, type="primary"):
-            st.session_state.hit_time = round(float(current_pos), 3)
+            st.session_state.hit_time = round(st.session_state.last_video_time, 3)
             st.success(f"Captured Hit Time: {st.session_state.hit_time} s")
     with col_btn2:
         if st.button("📍 Capture Current as Mark Landing", use_container_width=True, type="primary"):
-            st.session_state.landing_time = round(float(current_pos), 3)
+            st.session_state.landing_time = round(st.session_state.last_video_time, 3)
             st.success(f"Captured Landing Time: {st.session_state.landing_time} s")
 
     st.markdown("---")
 
-    # Timestamps inputs (reflecting captured or manually adjusted values)
+    # Timestamps inputs (reflecting captured or manually typed values)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(
@@ -147,6 +148,9 @@ if uploaded_file is not None:
                 st.info(f"Recorded for player: **{player_name}** ({hit_type})")
         else:
             st.error("Error: 'Mark Landing' timestamp must occur *after* 'Mark Hit' timestamp.")
+
+else:
+    st.info("👆 Upload a video file above to start analyzing your clips.")
 
 else:
     st.info("👆 Upload a video file above to start analyzing your clips.")

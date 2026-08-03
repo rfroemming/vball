@@ -31,13 +31,13 @@ if uploaded_file is not None:
 
     # Custom HTML5 Video Player with a live millisecond tracker box
     player_html = f"""
-    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d;">
+    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
         <video id="vid" width="100%" controls style="border-radius: 8px;">
             <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
             Your browser does not support the video tag.
         </video>
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 10px 15px; border-radius: 6px; border: 1px solid #21262d;">
-            <span style="color: #8b949e; font-family: monospace; font-size: 14px;">CURRENT EXACT POSITION:</span>
+        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
+            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">CURRENT EXACT POSITION:</span>
             <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">0.000 s</span>
         </div>
     </div>
@@ -51,8 +51,8 @@ if uploaded_file is not None:
     </script>
     """
     
-    # Render the custom component box
-    components.html(player_html, height=340)
+    # Render the custom component box with an increased height (420px) so nothing gets cut off
+    components.html(player_html, height=420)
 
     st.markdown("---")
 

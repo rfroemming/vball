@@ -14,7 +14,7 @@ st.markdown("### 🏐 AI-Powered Video Analysis & Detection Preview")
 def load_model():
     return YOLO("yolov8n.pt")
 
-model = load_model()
+model = YOLO("best.pt")
 
 # File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])

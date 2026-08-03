@@ -96,14 +96,20 @@ if uploaded_file is not None:
             st.warning("Reference span pixel length is 0. Please select two distinct points.")
 
     st.markdown("---")
-    st.subheader("⚙️ Step 2: Detection & Speed Settings")
-    col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
-    with col_cfg1:
-        true_fps = st.number_input("Recording FPS", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
-    with col_cfg2:
-        conf_threshold = st.slider("Model Confidence", min_value=0.01, max_value=0.50, value=0.10, step=0.05)
-    with col_cfg3:
-        hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
+    st.subheader("⚙️ Step 2: Video Speed Settings")
+    
+    # Simplified speed mode selector for standard vs slow-motion footage
+    speed_mode = st.radio(
+        "Video Recording Mode",
+        ["Standard Speed (30 FPS)", "Slow Motion (0.25x / 120-240 FPS handled via multiplier)"],
+        index=0
+    )
+    
+    if "Slow Motion" in speed_mode:
+        # For 0.25x slow motion, effective speed is scaled accordingly
+        effective_fps = 120.0  # Equivalent timeline frame rate multiplier
+    else:
+        effective_fps = 30.0
 
     if st.button("🤖 Run AI Detection & Calculate Speed", type="primary"):
         if ref_pixel_length <= 0:
@@ -124,6 +130,7 @@ if uploaded_file is not None:
                 centers = []
                 frame_count = 0
                 CUSTOM_CLASS_ID = 0 
+                conf_threshold = 0.10 # Default fixed confidence threshold
 
                 while cap.isOpened():
                     ret, frame = cap.read()
@@ -176,7 +183,7 @@ if uploaded_file is not None:
                 st.video(video_bytes, format="video/webm")
 
                 if len(centers) < 5:
-                    st.error(f"Only {len(centers)} frames tracked. Try lowering the Confidence slider.")
+                    st.error("Only a few frames were tracked. Ensure the model detects the ball clearly.")
                 else:
                     max_pixel_speed = 0.0
                     best_segment = (0, 0)
@@ -191,8 +198,7 @@ if uploaded_file is not None:
                                 max_pixel_speed = pix_speed_per_frame
                                 best_segment = (f1, f2)
 
-                    # Simplified calculation directly using true_fps and scale factor
-                    peak_mps = max_pixel_speed * true_fps * calibrated_meters_per_pixel
+                    peak_mps = max_pixel_speed * effective_fps * calibrated_meters_per_pixel
                     max_speed_kmh = peak_mps * 3.6
 
                     st.markdown("---")
@@ -206,7 +212,7 @@ if uploaded_file is not None:
                         st.write(f"- **Reference Object:** {reference_label} ({known_meters}m)")
                         st.write(f"- **Reference Span Pixel Length:** {ref_pixel_length:.1f} px")
                         st.write(f"- **Calibrated Scale Factor:** {calibrated_meters_per_pixel:.6f} meters/pixel")
-                        st.write(f"- **Recording FPS:** {true_fps}")
+                        st.write(f"- **Effective FPS Used:** {effective_fps}")
                         st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")
                         st.write(f"- **Total Frames Processed:** {frame_count}")
 

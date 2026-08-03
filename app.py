@@ -1,6 +1,6 @@
 import streamlit as st
 import tempfile
-import os
+import base64
 import streamlit.components.v1 as components
 
 # Page layout configuration
@@ -18,34 +18,56 @@ if "landing_time" not in st.session_state:
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
 
 if uploaded_file is not None:
-    # Save uploaded video temporarily to serve it
+    # Save uploaded video temporarily
     tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Read video bytes for HTML embedding
+    # Read video bytes and encode to base64 for the custom HTML player
     with open(video_path, "rb") as f:
         video_bytes = f.read()
-        
-    import base64
     video_base64 = base64.b64encode(video_bytes).decode('utf-8')
 
-    # Custom HTML5 Video Player with JS capture hooks communicating with Streamlit state
-    # Alternatively, using Streamlit's native components for state handling:
-    
-    st.video(video_path)
-    
-    st.info("💡 **Tip:** Use your video player controls, pause at the exact moment, and use the capture buttons below.")
+    st.info("💡 **Tip:** Play the video, pause at the exact moment, and click the capture buttons below.")
 
-    # Create columns for capture buttons
-    col_btn1, col_btn2 = st.columns(2)
+    # Custom HTML5 Video Player + JavaScript to pass timestamp back to Streamlit
+    player_html = f"""
+    <div>
+        <video id="vid" width="100%" controls style="border-radius: 8px;">
+            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="sendTime('hit')" style="flex: 1; background-color: #238636; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">📍 Capture Hit Time</button>
+            <button onclick="sendTime('landing')" style="flex: 1; background-color: #da3633; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">📍 Capture Landing Time</button>
+        </div>
+    </div>
+    <script>
+        function sendTime(type) {{
+            var myVideo = document.getElementById('vid');
+            var currentTime = myVideo.currentTime;
+            const data = {{type: type, time: currentTime}};
+            // Send message to Streamlit parent window
+            window.parent.postMessage({{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: data}}, "*");
+        }}
+    </script>
+    """
     
-    # We use text inputs combined with a workaround or custom inputs to grab times smoothly, 
-    # Or cleaner: JavaScript bridge component. For a pure Streamlit approach that is rock solid:
-    
+    # Render custom component and catch button clicks
+    val = components.html(player_html, height=340)
+
+    # If a button inside the HTML component was clicked, update session state
+    if val is not None and isinstance(val, dict):
+        if val.get('type') == 'hit':
+            st.session_state.hit_time = round(val.get('time', 0.0), 2)
+            st.rerun()
+        elif val.get('type') == 'landing':
+            st.session_state.landing_time = round(val.get('time', 0.0), 2)
+            st.rerun()
+
     st.markdown("---")
 
-    # Timestamps inputs
+    # Timestamps inputs (reflecting captured or manually typed values)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(
@@ -108,4 +130,4 @@ if uploaded_file is not None:
             st.error("Error: 'Mark Landing' timestamp must occur *after* 'Mark Hit' timestamp.")
 
 else:
-    st.info("👆 Upload a video file above to start analyzing your clips.")
+    st.info("👆 Upload a video file above to start analyzing your clips.")e to start analyzing your clips.")

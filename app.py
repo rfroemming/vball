@@ -1,14 +1,13 @@
 import streamlit as st
 import tempfile
-import base64
-import streamlit.components.v1 as components
+import cv2
 
 # Page layout configuration
 st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="centered")
 
 st.markdown("### 🏐 Video Analysis Dashboard")
 
-# Initialize Session State variables for timestamps
+# Initialize Session State variables
 if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
@@ -22,64 +21,43 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Read video bytes and encode to base64 for the custom HTML player
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-    video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+    # Display video player
+    st.video(video_path)
 
-    st.info("💡 **Tip:** Pause or scrub the video to the exact moment and click the capture buttons below the video.")
+    # Extract video properties for precise slider control
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps if fps > 0 else 0.0
+    cap.release()
 
-    # Custom HTML5 Video Player with Live Tracker and Action Buttons
-    player_html = f"""
-    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
-        <video id="vid" width="100%" controls style="border-radius: 8px;">
-            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-        
-        <!-- Live Position Display & Buttons -->
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 10px 15px; border-radius: 6px; border: 1px solid #21262d;">
-            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">POSITION:</span>
-            <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">0.000 s</span>
-        </div>
-
-        <div style="display: flex; gap: 10px; margin-top: 10px;">
-            <button onclick="captureTime('hit')" style="flex: 1; background-color: #238636; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Hit</button>
-            <button onclick="captureTime('landing')" style="flex: 1; background-color: #da3633; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Landing</button>
-        </div>
-    </div>
+    st.markdown("---")
+    st.markdown("#### ⏱️ Frame Scrubber & Timestamp Capturer")
     
-    <script>
-        const video = document.getElementById('vid');
-        const timeDisplay = document.getElementById('time-display');
+    # Interactive Slider representing video duration down to milliseconds
+    current_slider_time = st.slider(
+        "Scrub video timeline", 
+        min_value=0.0, 
+        max_value=float(duration), 
+        value=0.0, 
+        step=0.001,
+        format="%.3f s"
+    )
 
-        video.addEventListener('timeupdate', function() {{
-            timeDisplay.innerText = video.currentTime.toFixed(3) + " s";
-        }});
-
-        function captureTime(type) {{
-            const currentTime = video.currentTime;
-            const data = {{type: type, time: currentTime}};
-            window.parent.postMessage({{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: data}}, "*");
-        }}
-    </script>
-    """
-    
-    # Increased height to 560px to fully display the buttons without clipping
-    val = components.html(player_html, height=560)
-
-    # Listen for button clicks sent back from JavaScript component
-    if val is not None and isinstance(val, dict):
-        if val.get('type') == 'hit':
-            st.session_state.hit_time = round(val.get('time', 0.0), 3)
-            st.rerun()
-        elif val.get('type') == 'landing':
-            st.session_state.landing_time = round(val.get('time', 0.0), 3)
-            st.rerun()
+    # Native Python buttons to capture the slider's current position
+    col_cap1, col_cap2 = st.columns(2)
+    with col_cap1:
+        if st.button("📍 Set as Mark Hit", use_container_width=True):
+            st.session_state.hit_time = round(current_slider_time, 3)
+            st.success(f"Hit time set to {st.session_state.hit_time}s")
+    with col_cap2:
+        if st.button("📍 Set as Mark Landing", use_container_width=True):
+            st.session_state.landing_time = round(current_slider_time, 3)
+            st.success(f"Landing time set to {st.session_state.landing_time}s")
 
     st.markdown("---")
 
-    # Timestamps inputs (reflecting captured or manually typed values)
+    # Timestamps inputs (editable fields reflecting captured or typed times)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(

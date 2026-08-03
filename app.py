@@ -5,16 +5,17 @@ import numpy as np
 from ultralytics import YOLO
 
 # Page layout configuration
-st.set_page_config(page_title="Video Analysis - AI Preview", page_icon="🏐", layout="centered")
+st.set_page_config(page_title="Video Analysis - Custom AI Preview", page_icon="🏐", layout="centered")
 
-st.markdown("### 🏐 AI-Powered Video Analysis & Detection Preview")
+st.markdown("### 🏐 Custom AI-Powered Volleyball Speed Tracker")
 
-# Load a pre-trained YOLO model (using YOLOv8 nano for fast execution)
+# Load your custom-trained YOLO model weights
 @st.cache_resource
 def load_model():
-    return YOLO("yolov8n.pt")
+    # Make sure 'best.pt' is in the same folder as this app
+    return YOLO("best.pt")
 
-model = YOLO("best.pt")
+model = load_model()
 
 # File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
@@ -35,8 +36,7 @@ if uploaded_file is not None:
     with col_cfg2:
         true_fps = st.number_input("Recording FPS", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
     with col_cfg3:
-        # Adjustable confidence slider to catch blurred/fast-moving balls
-        conf_threshold = st.slider("YOLO Confidence", min_value=0.05, max_value=0.50, value=0.15, step=0.05, help="Lower values help detect fast, blurred balls.")
+        conf_threshold = st.slider("Custom Model Confidence", min_value=0.01, max_value=0.50, value=0.10, step=0.05, help="Lower values help detect fast, blurred balls.")
     with col_cfg4:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
@@ -49,8 +49,8 @@ if uploaded_file is not None:
     selected_speed_label = st.selectbox("Timeline Playback Speed Multiplier", list(slow_mo_options.keys()))
     speed_factor = slow_mo_options[selected_speed_label]
 
-    if st.button("🤖 Run AI Detection & Show Preview", type="primary"):
-        with st.spinner("Processing frames with lowered confidence filter... Please wait."):
+    if st.button("🤖 Run Custom AI Detection & Show Preview", type="primary"):
+        with st.spinner("Processing frames with your custom model... Please wait."):
             cap = cv2.VideoCapture(video_path)
             detected_container_fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -65,7 +65,9 @@ if uploaded_file is not None:
 
             centers = []
             frame_count = 0
-            SPORTS_BALL_CLASS_ID = 32 
+            
+            # CUSTOM MODEL CLASS ID: Change this if your Roboflow class index is different (e.g. 0 for single class)
+            CUSTOM_CLASS_ID = 0 
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -73,7 +75,6 @@ if uploaded_file is not None:
                     break
                 
                 frame_count += 1
-                # Run YOLO on the frame
                 results = model(frame, verbose=False)
                 
                 best_box = None
@@ -84,13 +85,14 @@ if uploaded_file is not None:
                     for box in boxes:
                         cls = int(box.cls[0])
                         conf = float(box.conf[0])
-                        # Filter for sports ball using the adjustable confidence threshold
-                        if cls == SPORTS_BALL_CLASS_ID and conf >= conf_threshold:
+                        
+                        # Match against your custom trained class ID and confidence threshold
+                        if cls == CUSTOM_CLASS_ID and conf >= conf_threshold:
                             if conf > highest_conf:
                                 highest_conf = conf
                                 best_box = box.xyxy[0].cpu().numpy()
 
-                # If a ball was found in this frame, record and draw it
+                # If the ball was found in this frame, record and draw it
                 if best_box is not None:
                     x1, y1, x2, y2 = map(int, best_box)
                     cx = int((x1 + x2) / 2)
@@ -112,13 +114,13 @@ if uploaded_file is not None:
             st.success("AI Preview Generation Complete!")
 
             # Display Annotated Video Preview
-            st.subheader("🎥 Annotated YOLO Detection Preview")
+            st.subheader("🎥 Annotated Custom AI Detection Preview")
             with open(output_preview_path, 'rb') as video_file:
                 video_bytes = video_file.read()
             st.video(video_bytes, format="video/webm")
 
             if len(centers) < 5:
-                st.error(f"Only {len(centers)} frames tracked. Try lowering the YOLO Confidence slider further (e.g., to 0.05) or check if the ball is clear in the video.")
+                st.error(f"Only {len(centers)} frames tracked. Try lowering the Confidence slider to 0.01 or verify that `best.pt` is loaded properly.")
             else:
                 # Calculations using true_fps
                 max_pixel_speed = 0.0
@@ -152,7 +154,8 @@ if uploaded_file is not None:
                 res_col2.metric("Total Frames Tracked", len(centers))
 
                 with st.expander("🔍 View Raw Tracking & Math Details"):
-                    st.write(f"- **YOLO Confidence Threshold Used:** {conf_threshold}")
+                    st.write(f"- **Custom Class ID Used:** {CUSTOM_CLASS_ID}")
+                    st.write(f"- **Confidence Threshold Used:** {conf_threshold}")
                     st.write(f"- **Forced True Recording FPS:** {true_fps}")
                     st.write(f"- **Total Pixel Span of Trajectory:** {total_pixel_span:.2f} px")
                     st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")
@@ -160,4 +163,4 @@ if uploaded_file is not None:
                     st.write(f"- **Total Frames Processed:** {frame_count}")
 
 else:
-    st.info("👆 Upload a video file above to generate the AI detection preview.")
+    st.info("👆 Upload a video file above to generate the custom AI detection preview.")

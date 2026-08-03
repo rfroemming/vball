@@ -28,13 +28,11 @@ if uploaded_file is not None:
     cap_temp.release()
 
     if ret:
-        first_frame_rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
         h, w, _ = first_frame.shape
 
         st.subheader("📐 Step 1: Court Line Calibration")
-        st.info(f"Video Resolution: **{w} x {h} pixels**. Choose your reference line and click its endpoints on the image below.")
+        st.info(f"Video Resolution: **{w} x {h} pixels**. Choose your reference line, select whether you are clicking Point 1 or Point 2, and click on the image below.")
 
-        # 1. Define inputs FIRST so variables exist globally
         col_cal1, col_cal2 = st.columns(2)
         with col_cal1:
             ref_line_type = st.selectbox(
@@ -57,7 +55,7 @@ if uploaded_file is not None:
                 default_meters = 5.0
             known_meters = st.number_input("Real-World Length of this Line (meters)", value=default_meters, step=0.5)
 
-        # 2. Initialize session state safely
+        # Initialize session state safely
         if "p1" not in st.session_state:
             st.session_state.p1 = (int(w * 0.3), int(h * 0.7))
         if "p2" not in st.session_state:
@@ -75,8 +73,25 @@ if uploaded_file is not None:
 
         st.markdown(f"👉 **Currently targeting:** **{st.session_state.active_point}**. Click on the image below to update it.")
         
+        # Draw calibration line and points onto a copy of the frame for visual feedback
+        annotated_frame = first_frame.copy()
+        p1 = st.session_state.p1
+        p2 = st.session_state.p2
+
+        # Draw line connecting P1 and P2
+        cv2.line(annotated_frame, p1, p2, (0, 0, 255), 3)
+        # Draw Point 1 (Red circle)
+        cv2.circle(annotated_frame, p1, 10, (0, 0, 255), -1)
+        cv2.putText(annotated_frame, "P1", (p1[0] - 15, p1[1] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        # Draw Point 2 (Blue circle)
+        cv2.circle(annotated_frame, p2, 10, (255, 0, 0), -1)
+        cv2.putText(annotated_frame, "P2", (p2[0] - 15, p2[1] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+
+        # Convert back to RGB for Streamlit
+        annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+
         # Interactive Image Display
-        coords = streamlit_image_coordinates(first_frame_rgb, width=700, key="calib_image")
+        coords = streamlit_image_coordinates(annotated_frame_rgb, width=700, key="calib_image")
 
         if coords is not None:
             scale_percent = w / 700.0
@@ -95,7 +110,6 @@ if uploaded_file is not None:
         x1_ref, y1_ref = st.session_state.p1
         x2_ref, y2_ref = st.session_state.p2
 
-        # 3. Calculation now runs safely with known_meters already declared
         ref_pixel_length = np.sqrt((x2_ref - x1_ref)**2 + (y2_ref - y1_ref)**2)
         if ref_pixel_length > 0:
             calibrated_meters_per_pixel = known_meters / ref_pixel_length

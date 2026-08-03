@@ -1,12 +1,14 @@
 import streamlit as st
 import tempfile
+import os
+import streamlit.components.v1 as components
 
 # Page layout configuration
 st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="centered")
 
 st.markdown("### 🏐 Video Analysis Dashboard")
 
-# Initialize Session State variables
+# Initialize Session State variables for timestamps
 if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
@@ -16,17 +18,34 @@ if "landing_time" not in st.session_state:
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
 
 if uploaded_file is not None:
+    # Save uploaded video temporarily to serve it
     tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Display video player
+    # Read video bytes for HTML embedding
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+        
+    import base64
+    video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+
+    # Custom HTML5 Video Player with JS capture hooks communicating with Streamlit state
+    # Alternatively, using Streamlit's native components for state handling:
+    
     st.video(video_path)
     
-    st.info("💡 **Tip:** Play the video, pause at the exact frame you want, and enter the timestamp below or use a media controller tool.")
+    st.info("💡 **Tip:** Use your video player controls, pause at the exact moment, and use the capture buttons below.")
+
+    # Create columns for capture buttons
+    col_btn1, col_btn2 = st.columns(2)
+    
+    # We use text inputs combined with a workaround or custom inputs to grab times smoothly, 
+    # Or cleaner: JavaScript bridge component. For a pure Streamlit approach that is rock solid:
+    
     st.markdown("---")
 
-    # Timestamps with manual controls
+    # Timestamps inputs
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(

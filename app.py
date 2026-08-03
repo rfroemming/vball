@@ -29,7 +29,7 @@ if uploaded_file is not None:
 
     st.info("💡 **Tip:** Play, pause, or scrub the video. Use the capture buttons inside the player card to grab timestamps instantly.")
 
-    # Combined Video Player + Live Display + Capture Buttons Component
+    # Combined Video Player + Live Display + Capture Buttons Component with Streamlit JS Bridge
     player_component_html = f"""
     <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
         <video id="vid" width="100%" controls style="border-radius: 8px;">
@@ -50,6 +50,9 @@ if uploaded_file is not None:
         </div>
         <div id="status-msg" style="color: #3fb950; font-size: 12px; margin-top: 8px; text-align: center; font-family: monospace; min-height: 18px;"></div>
     </div>
+
+    <!-- Official Streamlit Component Communication Script -->
+    <script src="https://streamlit.com/components/streamlit-component-lib.js"></script>
     
     <script>
         const video = document.getElementById('vid');
@@ -65,25 +68,28 @@ if uploaded_file is not None:
             timeDisplay.innerText = currentTime.toFixed(3) + " s";
         }});
 
+        function sendValueToPython(actionType, timeVal) {{
+            const roundedTime = Number(timeVal.toFixed(3));
+            if (actionType === 'hit') {{
+                statusMsg.innerText = "Captured Hit Time: " + roundedTime + " s";
+            }} else {{
+                statusMsg.innerText = "Captured Landing Time: " + roundedTime + " s";
+            }}
+            
+            // Send back using Streamlit's official component API
+            window.Streamlit.setComponentValue({{ action: actionType, time: roundedTime }});
+        }}
+
         btnHit.addEventListener('click', function() {{
-            const roundedTime = Number(currentTime.toFixed(3));
-            statusMsg.innerText = "Captured Hit Time: " + roundedTime + " s";
-            window.parent.postMessage({{
-                isStreamlitMessage: true, 
-                type: 'streamlit:setComponentValue', 
-                value: {{ action: 'hit', time: roundedTime }}
-            }}, "*");
+            sendValueToPython('hit', currentTime);
         }});
 
         btnLanding.addEventListener('click', function() {{
-            const roundedTime = Number(currentTime.toFixed(3));
-            statusMsg.innerText = "Captured Landing Time: " + roundedTime + " s";
-            window.parent.postMessage({{
-                isStreamlitMessage: true, 
-                type: 'streamlit:setComponentValue', 
-                value: {{ action: 'landing', time: roundedTime }}
-            }}, "*");
+            sendValueToPython('landing', currentTime);
         }});
+
+        // Set initial frame height
+        window.Streamlit.setFrameHeight(450);
     </script>
     """
     

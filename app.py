@@ -64,7 +64,7 @@ if uploaded_file is not None:
     """
     
     # Renders the visible video and handles live time passing back to Python variable 'current_pos'
-    current_pos = components.html(player_html, height=360)
+    current_pos = components.html(player_html, height=400)
     
     if current_pos is None:
         current_pos = 0.0

@@ -1,5 +1,7 @@
 import streamlit as st
 import tempfile
+import base64
+import streamlit.components.v1 as components
 
 # Page layout configuration
 st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="centered")
@@ -12,12 +14,6 @@ if "hit_time" not in st.session_state:
 if "landing_time" not in st.session_state:
     st.session_state.landing_time = 0.0
 
-# Temporary storage for manual time typing helpers
-if "temp_hit" not in st.session_state:
-    st.session_state.temp_hit = 0.0
-if "temp_landing" not in st.session_state:
-    st.session_state.temp_landing = 0.0
-
 # 1. File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
 
@@ -26,10 +22,37 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Native Streamlit video player with standard scrub controls
-    st.video(video_path)
+    # Read video bytes and encode to base64 for the custom HTML player
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+    video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+
+    st.info("💡 **Tip:** Pause the video at the exact moment and copy the millisecond timestamp shown in the box below into your inputs.")
+
+    # Custom HTML5 Video Player with a live millisecond tracker box
+    player_html = f"""
+    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d;">
+        <video id="vid" width="100%" controls style="border-radius: 8px;">
+            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 10px 15px; border-radius: 6px; border: 1px solid #21262d;">
+            <span style="color: #8b949e; font-family: monospace; font-size: 14px;">CURRENT EXACT POSITION:</span>
+            <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">0.000 s</span>
+        </div>
+    </div>
+    <script>
+        const video = document.getElementById('vid');
+        const timeDisplay = document.getElementById('time-display');
+
+        video.addEventListener('timeupdate', function() {{
+            timeDisplay.innerText = video.currentTime.toFixed(3) + " s";
+        }});
+    </script>
+    """
     
-    st.info("💡 **How to mark:** Play or scrub the video above, note the exact timestamp on the player (e.g., `0:07`), and type it or use the number inputs below.")
+    # Render the custom component box
+    components.html(player_html, height=340)
 
     st.markdown("---")
 
@@ -40,14 +63,16 @@ if uploaded_file is not None:
             "📍 Mark Hit (seconds)", 
             min_value=0.0, 
             value=float(st.session_state.hit_time), 
-            step=0.01
+            step=0.001,
+            format="%.3f"
         )
     with col2:
         st.session_state.landing_time = st.number_input(
             "📍 Mark Landing (seconds)", 
             min_value=0.0, 
             value=float(st.session_state.landing_time), 
-            step=0.01
+            step=0.001,
+            format="%.3f"
         )
 
     st.markdown("---")

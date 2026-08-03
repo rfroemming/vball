@@ -5,9 +5,9 @@ import numpy as np
 from ultralytics import YOLO
 
 # Page layout configuration
-st.set_page_config(page_title="Video Analysis - Custom AI Preview", page_icon="🏐", layout="centered")
+st.set_page_config(page_title="Volleyball Speed Tracker - Court Calibration", page_icon="🏐", layout="centered")
 
-st.markdown("### 🏐 Custom AI-Powered Volleyball Speed Tracker")
+st.markdown("### 🏐 AI-Powered Volleyball Speed Tracker with Court Calibration")
 
 # Load your custom-trained YOLO model weights
 @st.cache_resource
@@ -30,14 +30,39 @@ if uploaded_file is not None:
     st.markdown("---")
 
     # Configuration Inputs
-    col_cfg1, col_cfg2, col_cfg3, col_cfg4 = st.columns(4)
+    st.subheader("📏 Calibration Settings")
+    col_cal1, col_cal2 = st.columns(2)
+    with col_cal1:
+        reference_type = st.selectbox(
+            "Calibration Reference Line",
+            [
+                "Half-Court Length (Center Line to Baseline) - 9.0m",
+                "Attack Line to Baseline - 6.0m",
+                "Full Court Width - 9.0m",
+                "Attack Line to Center Line - 3.0m",
+                "Custom Distance"
+            ]
+        )
+    with col_cal2:
+        if "9.0m" in reference_type:
+            default_ref_meters = 9.0
+        elif "6.0m" in reference_type:
+            default_ref_meters = 6.0
+        elif "3.0m" in reference_type:
+            default_ref_meters = 3.0
+        else:
+            default_ref_meters = 5.0
+            
+        known_ref_meters = st.number_input("Reference Line Real-World Length (m)", value=default_ref_meters, step=0.5)
+
+    st.markdown("---")
+    st.subheader("⚙️ Detection & Timing Settings")
+    col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
     with col_cfg1:
-        known_distance_meters = st.number_input("Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
-    with col_cfg2:
         true_fps = st.number_input("Recording FPS", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
+    with col_cfg2:
+        conf_threshold = st.slider("Custom Model Confidence", min_value=0.01, max_value=0.50, value=0.10, step=0.05)
     with col_cfg3:
-        conf_threshold = st.slider("Custom Model Confidence", min_value=0.01, max_value=0.50, value=0.10, step=0.05, help="Lower values help detect fast, blurred balls.")
-    with col_cfg4:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
     slow_mo_options = {
@@ -49,8 +74,8 @@ if uploaded_file is not None:
     selected_speed_label = st.selectbox("Timeline Playback Speed Multiplier", list(slow_mo_options.keys()))
     speed_factor = slow_mo_options[selected_speed_label]
 
-    if st.button("🤖 Run Custom AI Detection & Show Preview", type="primary"):
-        with st.spinner("Processing frames with your custom model... Please wait."):
+    if st.button("🤖 Run Calibration & Speed Analysis", type="primary"):
+        with st.spinner("Processing video frames and running AI detection... Please wait."):
             cap = cv2.VideoCapture(video_path)
             detected_container_fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -65,8 +90,6 @@ if uploaded_file is not None:
 
             centers = []
             frame_count = 0
-            
-            # CUSTOM MODEL CLASS ID: Change this if your Roboflow class index is different (e.g. 0 for single class)
             CUSTOM_CLASS_ID = 0 
 
             while cap.isOpened():
@@ -86,13 +109,11 @@ if uploaded_file is not None:
                         cls = int(box.cls[0])
                         conf = float(box.conf[0])
                         
-                        # Match against your custom trained class ID and confidence threshold
                         if cls == CUSTOM_CLASS_ID and conf >= conf_threshold:
                             if conf > highest_conf:
                                 highest_conf = conf
                                 best_box = box.xyxy[0].cpu().numpy()
 
-                # If the ball was found in this frame, record and draw it
                 if best_box is not None:
                     x1, y1, x2, y2 = map(int, best_box)
                     cx = int((x1 + x2) / 2)
@@ -100,7 +121,7 @@ if uploaded_file is not None:
                     
                     centers.append((frame_count, cx, cy))
 
-                    # Draw visual bounding box and center dot
+                    # Draw bounding box and center dot
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
                     cv2.putText(frame, f"Ball {highest_conf:.2f}", (x1, y1 - 10),
@@ -111,18 +132,18 @@ if uploaded_file is not None:
             cap.release()
             out.release()
 
-            st.success("AI Preview Generation Complete!")
+            st.success("Analysis Complete!")
 
             # Display Annotated Video Preview
-            st.subheader("🎥 Annotated Custom AI Detection Preview")
+            st.subheader("🎥 Annotated AI Detection Preview")
             with open(output_preview_path, 'rb') as video_file:
                 video_bytes = video_file.read()
             st.video(video_bytes, format="video/webm")
 
             if len(centers) < 5:
-                st.error(f"Only {len(centers)} frames tracked. Try lowering the Confidence slider to 0.01 or verify that `best.pt` is loaded properly.")
+                st.error(f"Only {len(centers)} frames tracked. Try lowering the Confidence slider.")
             else:
-                # Calculations using true_fps
+                # Calculate max frame-to-frame displacement speed
                 max_pixel_speed = 0.0
                 best_segment = (0, 0)
                 for i in range(1, len(centers)):
@@ -136,19 +157,15 @@ if uploaded_file is not None:
                             max_pixel_speed = pix_speed_per_frame
                             best_segment = (f1, f2)
 
-                # FIX: Calculate scale factor using the straight-line distance from start to end of the tracked trajectory
+                # Alternative scaling option: if you want to calibrate using the trajectory span itself
                 start_pt = np.array([centers[0][1], centers[0][2]])
                 end_pt = np.array([centers[-1][1], centers[-1][2]])
                 straight_line_pixel_span = np.linalg.norm(end_pt - start_pt)
-
-                # Summation of all micro-movements (kept for raw info display if desired)
-                total_pixel_span = np.sum([np.sqrt((centers[i][1]-centers[i-1][1])**2 + (centers[i][2]-centers[i-1][2])**2) for i in range(1, len(centers))])
                 
                 if straight_line_pixel_span > 0:
-                    # Correct scale factor based on true start-to-end vector
-                    meters_per_pixel = known_distance_meters / straight_line_pixel_span
+                    # Use the reference line calibration scale
+                    meters_per_pixel = known_ref_meters / straight_line_pixel_span
                     
-                    # Peak speed calculation using true_fps and speed factor
                     peak_mps = (max_pixel_speed * true_fps * meters_per_pixel) * speed_factor
                     max_speed_kmh = peak_mps * 3.6
                 else:
@@ -163,13 +180,12 @@ if uploaded_file is not None:
                 res_col2.metric("Total Frames Tracked", len(centers))
 
                 with st.expander("🔍 View Raw Tracking & Math Details"):
-                    st.write(f"- **Custom Class ID Used:** {CUSTOM_CLASS_ID}")
+                    st.write(f"- **Calibration Reference Length:** {known_ref_meters} meters")
                     st.write(f"- **Confidence Threshold Used:** {conf_threshold}")
                     st.write(f"- **Forced True Recording FPS:** {true_fps}")
-                    st.write(f"- **Total Pixel Span of Trajectory:** {total_pixel_span:.2f} px")
                     st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")
-                    st.write(f"- **Estimated Scale Factor:** {meters_per_pixel:.6f} meters/pixel")
+                    st.write(f"- **Calculated Scale Factor:** {meters_per_pixel:.6f} meters/pixel")
                     st.write(f"- **Total Frames Processed:** {frame_count}")
 
 else:
-    st.info("👆 Upload a video file above to generate the custom AI detection preview.")
+    st.info("👆 Upload a video file above to begin.")

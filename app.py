@@ -22,9 +22,11 @@ if uploaded_file is not None:
 
     # Display video player
     st.video(video_path)
+    
+    st.info("💡 **Tip:** Play the video, pause at the exact frame you want, and enter the timestamp below or use a media controller tool.")
     st.markdown("---")
 
-    # Timestamps
+    # Timestamps with manual controls
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(
@@ -69,9 +71,6 @@ if uploaded_file is not None:
     # Calculation logic
     if st.button("🚀 Calculate Speed", type="primary"):
         raw_time_elapsed = st.session_state.landing_time - st.session_state.hit_time
-        
-        # Adjust time elapsed if the video was recorded in slow motion
-        # (e.g., if 4 seconds passed in a 0.25x slow-mo video, real-time elapsed is 4 * 0.25 = 1 second)
         real_time_elapsed = raw_time_elapsed * speed_factor
         
         if real_time_elapsed > 0:

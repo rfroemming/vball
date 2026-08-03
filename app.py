@@ -1,18 +1,18 @@
 import streamlit as st
 import tempfile
-import base64
-import streamlit.components.v1 as components
 
 # Page layout configuration
 st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="centered")
 
 st.markdown("### 🏐 Video Analysis Dashboard")
 
-# Initialize Session State variables for timestamps
+# Initialize Session State variables for timestamps and video current time
 if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
     st.session_state.landing_time = 0.0
+if "current_video_time" not in st.session_state:
+    st.session_state.current_video_time = 0.0
 
 # 1. File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
@@ -22,86 +22,32 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Read video bytes and encode to base64
-    with open(video_path, "rb") as f:
-        video_bytes = f.read()
-    video_base64 = base64.b64encode(video_bytes).decode('utf-8')
+    # Native Streamlit video player
+    st.video(video_path)
 
-    st.info("💡 **Tip:** Play, pause, or scrub the video. Use the capture buttons inside the player card to grab timestamps instantly.")
+    st.markdown("---")
+    st.info("💡 **Instructions:** Play your video to locate the exact timestamps, then use the timeline scrub below to match the current video position and click capture.")
 
-    # Combined Video Player + Live Display + Capture Buttons Component with Streamlit JS Bridge
-    player_component_html = f"""
-    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
-        <video id="vid" width="100%" controls style="border-radius: 8px;">
-            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
-            Your browser does not support the video tag.
-        </video>
-        
-        <!-- Live Position Display Box -->
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
-            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
-            <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 20px; font-weight: bold;">0.000 s</span>
-        </div>
+    # Timeline Sync Scrub Slider (allows precise timestamp positioning)
+    st.session_state.current_video_time = st.slider(
+        "⏱️ Current Video Timestamp (seconds)", 
+        min_value=0.0, 
+        max_value=60.0, # Will dynamically adjust based on video if needed, or update via input
+        value=float(st.session_state.current_video_time), 
+        step=0.001,
+        format="%.3f s"
+    )
 
-        <!-- Embedded Interactive Capture Buttons -->
-        <div style="display: flex; gap: 10px; margin-top: 12px;">
-            <button id="btn-hit" style="flex: 1; background-color: #1f6feb; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">📍 Capture as Mark Hit</button>
-            <button id="btn-landing" style="flex: 1; background-color: #1f6feb; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">📍 Capture as Mark Landing</button>
-        </div>
-        <div id="status-msg" style="color: #3fb950; font-size: 12px; margin-top: 8px; text-align: center; font-family: monospace; min-height: 18px;"></div>
-    </div>
-
-    <!-- Official Streamlit Component Communication Script -->
-    <script src="https://streamlit.com/components/streamlit-component-lib.js"></script>
-    
-    <script>
-        const video = document.getElementById('vid');
-        const timeDisplay = document.getElementById('time-display');
-        const btnHit = document.getElementById('btn-hit');
-        const btnLanding = document.getElementById('btn-landing');
-        const statusMsg = document.getElementById('status-msg');
-
-        let currentTime = 0.0;
-
-        video.addEventListener('timeupdate', function() {{
-            currentTime = video.currentTime;
-            timeDisplay.innerText = currentTime.toFixed(3) + " s";
-        }});
-
-        function sendValueToPython(actionType, timeVal) {{
-            const roundedTime = Number(timeVal.toFixed(3));
-            if (actionType === 'hit') {{
-                statusMsg.innerText = "Captured Hit Time: " + roundedTime + " s";
-            }} else {{
-                statusMsg.innerText = "Captured Landing Time: " + roundedTime + " s";
-            }}
-            
-            // Send back using Streamlit's official component API
-            window.Streamlit.setComponentValue({{ action: actionType, time: roundedTime }});
-        }}
-
-        btnHit.addEventListener('click', function() {{
-            sendValueToPython('hit', currentTime);
-        }});
-
-        btnLanding.addEventListener('click', function() {{
-            sendValueToPython('landing', currentTime);
-        }});
-
-        // Set initial frame height
-        window.Streamlit.setFrameHeight(450);
-    </script>
-    """
-    
-    # Render component and catch action outputs
-    component_output = components.html(player_component_html, height=560)
-
-    # Handle data sent back from the component buttons
-    if isinstance(component_output, dict):
-        if component_output.get("action") == "hit":
-            st.session_state.hit_time = component_output.get("time", st.session_state.hit_time)
-        elif component_output.get("action") == "landing":
-            st.session_state.landing_time = component_output.get("time", st.session_state.landing_time)
+    # Native Python Capture Buttons
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("📍 Capture Current as Mark Hit", use_container_width=True, type="primary"):
+            st.session_state.hit_time = round(st.session_state.current_video_time, 3)
+            st.success(f"Captured Hit Time: {st.session_state.hit_time} s")
+    with col_btn2:
+        if st.button("📍 Capture Current as Mark Landing", use_container_width=True, type="primary"):
+            st.session_state.landing_time = round(st.session_state.current_video_time, 3)
+            st.success(f"Captured Landing Time: {st.session_state.landing_time} s")
 
     st.markdown("---")
 

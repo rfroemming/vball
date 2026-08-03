@@ -1,6 +1,7 @@
 import streamlit as st
 import tempfile
-import cv2
+import base64
+import streamlit.components.v1 as components
 
 # Page layout configuration
 st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="centered")
@@ -12,8 +13,6 @@ if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
     st.session_state.landing_time = 0.0
-if "current_pos" not in st.session_state:
-    st.session_state.current_pos = 0.0
 
 # 1. File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
@@ -23,54 +22,69 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Open video to get properties
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps > 0 else 0.0
-    cap.release()
+    # Read video bytes and encode to base64 for the custom HTML player display
+    with open(video_path, "rb") as f:
+        video_bytes = f.read()
+    video_base64 = base64.b64encode(video_bytes).decode('utf-8')
 
-    st.info("💡 **Tip:** Use the slider below to scrub through the video. The live position display will update instantly.")
+    st.info("💡 **Tip:** Play, pause, or scrub the video. The live position display will track your exact spot.")
 
-    # Live Position Slider acting as the video timeline controller
-    st.session_state.current_pos = st.slider(
-        "🎥 Live Video Timeline Position", 
-        min_value=0.0, 
-        max_value=float(duration), 
-        value=float(st.session_state.current_pos), 
-        step=0.001,
-        format="%.3f s"
-    )
-
-    # Live Position Display Box
-    st.markdown(
-        f"""
+    # HTML Video Player + Live Position Streamer Component
+    player_html = f"""
+    <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
         <video id="vid" width="100%" controls style="border-radius: 8px;">
             <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
             Your browser does not support the video tag.
         </video>
-        <div style="background-color: #161b22; padding: 12px 15px; border-radius: 6px; border: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        
+        <!-- Live Position Display Box -->
+        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
             <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
-            <span style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">{st.session_state.current_pos:.3f} s</span>
+            <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 20px; font-weight: bold;">0.000 s</span>
         </div>
-        """, 
-        unsafe_allow_html=True
-    )
+    </div>
+    
+    <script>
+        const video = document.getElementById('vid');
+        const timeDisplay = document.getElementById('time-display');
 
-    # Native Python Capture Buttons
+        // Real-time listener updating the display box as video plays/scrubs
+        video.addEventListener('timeupdate', function() {{
+            const currentTime = video.currentTime;
+            timeDisplay.innerText = currentTime.toFixed(3) + " s";
+            
+            // Send current timestamp back to Streamlit state continuously
+            window.parent.postMessage({{
+                isStreamlitMessage: true, 
+                type: 'streamlit:setComponentValue', 
+                value: currentTime
+            }}, "*");
+        }});
+    </script>
+    """
+    
+    # Renders the visible video and handles live time passing back to Python variable 'current_pos'
+    current_pos = components.html(player_html, height=360)
+    
+    if current_pos is None:
+        current_pos = 0.0
+
+    st.markdown("---")
+
+    # Native Python Capture Buttons leveraging the live video position
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("📍 Capture as Mark Hit", use_container_width=True, type="primary"):
-            st.session_state.hit_time = round(st.session_state.current_pos, 3)
+        if st.button("📍 Capture Current as Mark Hit", use_container_width=True, type="primary"):
+            st.session_state.hit_time = round(float(current_pos), 3)
             st.success(f"Captured Hit Time: {st.session_state.hit_time} s")
     with col_btn2:
-        if st.button("📍 Capture as Mark Landing", use_container_width=True, type="primary"):
-            st.session_state.landing_time = round(st.session_state.current_pos, 3)
+        if st.button("📍 Capture Current as Mark Landing", use_container_width=True, type="primary"):
+            st.session_state.landing_time = round(float(current_pos), 3)
             st.success(f"Captured Landing Time: {st.session_state.landing_time} s")
 
     st.markdown("---")
 
-    # Timestamps inputs (reflecting captured or typed values)
+    # Timestamps inputs (reflecting captured or manually adjusted values)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(

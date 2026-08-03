@@ -151,6 +151,3 @@ if uploaded_file is not None:
 
 else:
     st.info("👆 Upload a video file above to start analyzing your clips.")
-
-else:
-    st.info("👆 Upload a video file above to start analyzing your clips.")

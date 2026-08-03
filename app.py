@@ -136,10 +136,19 @@ if uploaded_file is not None:
                             max_pixel_speed = pix_speed_per_frame
                             best_segment = (f1, f2)
 
+                # FIX: Calculate scale factor using the straight-line distance from start to end of the tracked trajectory
+                start_pt = np.array([centers[0][1], centers[0][2]])
+                end_pt = np.array([centers[-1][1], centers[-1][2]])
+                straight_line_pixel_span = np.linalg.norm(end_pt - start_pt)
+
+                # Summation of all micro-movements (kept for raw info display if desired)
                 total_pixel_span = np.sum([np.sqrt((centers[i][1]-centers[i-1][1])**2 + (centers[i][2]-centers[i-1][2])**2) for i in range(1, len(centers))])
                 
-                if total_pixel_span > 0:
-                    meters_per_pixel = known_distance_meters / total_pixel_span
+                if straight_line_pixel_span > 0:
+                    # Correct scale factor based on true start-to-end vector
+                    meters_per_pixel = known_distance_meters / straight_line_pixel_span
+                    
+                    # Peak speed calculation using true_fps and speed factor
                     peak_mps = (max_pixel_speed * true_fps * meters_per_pixel) * speed_factor
                     max_speed_kmh = peak_mps * 3.6
                 else:

@@ -130,4 +130,4 @@ if uploaded_file is not None:
             st.error("Error: 'Mark Landing' timestamp must occur *after* 'Mark Hit' timestamp.")
 
 else:
-    st.info("👆 Upload a video file above to start analyzing your clips.")e to start analyzing your clips.")
+    st.info("👆 Upload a video file above to start analyzing your clips.")

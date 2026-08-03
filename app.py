@@ -45,6 +45,10 @@ if uploaded_file is not None:
     # Live Position Display Box
     st.markdown(
         f"""
+        <video id="vid" width="100%" controls style="border-radius: 8px;">
+            <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
         <div style="background-color: #161b22; padding: 12px 15px; border-radius: 6px; border: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
             <span style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">{st.session_state.current_pos:.3f} s</span>

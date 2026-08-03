@@ -7,11 +7,13 @@ st.set_page_config(page_title="Video Analysis", page_icon="🏐", layout="center
 
 st.markdown("### 🏐 Video Analysis Dashboard")
 
-# Initialize Session State variables
+# Initialize Session State variables for timestamps
 if "hit_time" not in st.session_state:
     st.session_state.hit_time = 0.0
 if "landing_time" not in st.session_state:
     st.session_state.landing_time = 0.0
+if "current_pos" not in st.session_state:
+    st.session_state.current_pos = 0.0
 
 # 1. File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
@@ -21,43 +23,50 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
-    # Display video player
-    st.video(video_path)
-
-    # Extract video properties for precise slider control
+    # Open video to get properties
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     duration = total_frames / fps if fps > 0 else 0.0
     cap.release()
 
-    st.markdown("---")
-    st.markdown("#### ⏱️ Frame Scrubber & Timestamp Capturer")
-    
-    # Interactive Slider representing video duration down to milliseconds
-    current_slider_time = st.slider(
-        "Scrub video timeline", 
+    st.info("💡 **Tip:** Use the slider below to scrub through the video. The live position display will update instantly.")
+
+    # Live Position Slider acting as the video timeline controller
+    st.session_state.current_pos = st.slider(
+        "🎥 Live Video Timeline Position", 
         min_value=0.0, 
         max_value=float(duration), 
-        value=0.0, 
+        value=float(st.session_state.current_pos), 
         step=0.001,
         format="%.3f s"
     )
 
-    # Native Python buttons to capture the slider's current position
-    col_cap1, col_cap2 = st.columns(2)
-    with col_cap1:
-        if st.button("📍 Set as Mark Hit", use_container_width=True):
-            st.session_state.hit_time = round(current_slider_time, 3)
-            st.success(f"Hit time set to {st.session_state.hit_time}s")
-    with col_cap2:
-        if st.button("📍 Set as Mark Landing", use_container_width=True):
-            st.session_state.landing_time = round(current_slider_time, 3)
-            st.success(f"Landing time set to {st.session_state.landing_time}s")
+    # Live Position Display Box
+    st.markdown(
+        f"""
+        <div style="background-color: #161b22; padding: 12px 15px; border-radius: 6px; border: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">LIVE POSITION DISPLAY:</span>
+            <span style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">{st.session_state.current_pos:.3f} s</span>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+    # Native Python Capture Buttons
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("📍 Capture as Mark Hit", use_container_width=True, type="primary"):
+            st.session_state.hit_time = round(st.session_state.current_pos, 3)
+            st.success(f"Captured Hit Time: {st.session_state.hit_time} s")
+    with col_btn2:
+        if st.button("📍 Capture as Mark Landing", use_container_width=True, type="primary"):
+            st.session_state.landing_time = round(st.session_state.current_pos, 3)
+            st.success(f"Captured Landing Time: {st.session_state.landing_time} s")
 
     st.markdown("---")
 
-    # Timestamps inputs (editable fields reflecting captured or typed times)
+    # Timestamps inputs (reflecting captured or typed values)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(

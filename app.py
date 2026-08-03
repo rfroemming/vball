@@ -44,8 +44,8 @@ if uploaded_file is not None:
         </div>
 
         <div style="display: flex; gap: 10px; margin-top: 10px;">
-            <button onclick="captureTime('hit')" style="flex: 1; background-color: #238636; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Hit</button>
-            <button onclick="captureTime('landing')" style="flex: 1; background-color: #da3633; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Landing</button>
+            <button onclick="captureTime('hit')" style="flex: 1; background-color: #238636; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Hit</button>
+            <button onclick="captureTime('landing')" style="flex: 1; background-color: #da3633; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Landing</button>
         </div>
     </div>
     
@@ -59,15 +59,14 @@ if uploaded_file is not None:
 
         function captureTime(type) {{
             const currentTime = video.currentTime;
-            // Send value securely back to Streamlit parent container
             const data = {{type: type, time: currentTime}};
             window.parent.postMessage({{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: data}}, "*");
         }}
     </script>
     """
     
-    # Render component and capture clicks
-    val = components.html(player_html, height=480)
+    # Increased height to 560px to fully display the buttons without clipping
+    val = components.html(player_html, height=560)
 
     # Listen for button clicks sent back from JavaScript component
     if val is not None and isinstance(val, dict):

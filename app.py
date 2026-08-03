@@ -54,15 +54,20 @@ if uploaded_file is not None:
             if fps == 0:
                 fps = 30.0
 
-            # Setup temporary output video for annotated preview
+            # Use VP09 or avc1 codec for universal browser compatibility
             output_preview_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            
+            # Try H.264 (avc1) first, fallback to mp4v if unavailable
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
             out = cv2.VideoWriter(output_preview_path, fourcc, fps, (width, height))
+            
+            if not out.isOpened():
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(output_preview_path, fourcc, fps, (width, height))
 
             centers = []
             frame_count = 0
             SPORTS_BALL_CLASS_ID = 32 
-            preview_frames_captured = []
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -72,7 +77,6 @@ if uploaded_file is not None:
                 frame_count += 1
                 results = model(frame, verbose=False)
                 
-                detected_in_frame = False
                 for r in results:
                     boxes = r.boxes
                     for box in boxes:
@@ -85,7 +89,6 @@ if uploaded_file is not None:
                             cy = int((y1 + y2) / 2)
                             
                             centers.append((frame_count, cx, cy))
-                            detected_in_frame = True
 
                             # Draw visual bounding box and center dot on frame for preview
                             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -96,18 +99,16 @@ if uploaded_file is not None:
                 # Write annotated frame to preview video
                 out.write(frame)
 
-                # Keep a few sample frames to display static previews if needed
-                if detected_in_frame and len(preview_frames_captured) < 3:
-                    preview_frames_captured.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-
             cap.release()
             out.release()
 
             st.success("AI Preview Generation Complete!")
 
-            # Display Annotated Video Preview
+            # Display Annotated Video Preview with browser-supported format reading
             st.subheader("🎥 Annotated YOLO Detection Preview")
-            st.video(output_preview_path)
+            with open(output_preview_path, 'rb') as video_file:
+                video_bytes = video_file.read()
+            st.video(video_bytes)
 
             if len(centers) < 2:
                 st.error("Could not track the ball across enough consecutive frames. Try lowering confidence thresholds or using a clearer angle.")

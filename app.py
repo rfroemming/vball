@@ -2,19 +2,21 @@ import streamlit as st
 import tempfile
 import cv2
 import numpy as np
+from ultralytics import YOLO
 
 # Page layout configuration
-st.set_page_config(page_title="AI Volleyball Speed Tracking", page_icon="🏐", layout="centered")
+st.set_page_config(page_title="Video Analysis - AI Detection", page_icon="🏐", layout="centered")
 
-st.markdown("### 🏐 AI-Powered Volleyball Speed Tracker")
-st.markdown("This app uses computer vision and the standard **20 cm ball diameter** to automatically track the hit and landing timestamps.")
+st.markdown("### 🏐 AI-Powered Video Analysis Dashboard")
 
-# Initialize Session State variables
-if "hit_time" not in st.session_state:
-    st.session_state.hit_time = 0.0
-if "landing_time" not in st.session_state:
-    st.session_state.landing_time = 0.0
+# Load a pre-trained YOLO model (using YOLOv8 nano for fast execution)
+@st.cache_resource
+def load_model():
+    return YOLO("yolov8n.pt")
 
+model = load_model()
+
+# File Uploader Section
 uploaded_file = st.file_uploader("Upload a video file (MP4, MOV)", type=["mp4", "mov", "avi"])
 
 if uploaded_file is not None:
@@ -22,110 +24,89 @@ if uploaded_file is not None:
     tfile.write(uploaded_file.read())
     video_path = tfile.name
 
+    # Display video player
     st.video(video_path)
-    
     st.markdown("---")
-    st.subheader("🤖 AI Ball Tracking Configuration")
-    
+
+    # Configuration options using 20 cm ball size reference
     col_cfg1, col_cfg2 = st.columns(2)
     with col_cfg1:
-        ball_real_diameter_cm = st.number_input("Known Ball Diameter (cm)", value=20.0, step=0.5)
+        known_ball_diameter_cm = st.number_input("Known Ball Diameter (cm)", value=20.0, step=0.5)
     with col_cfg2:
-        distance = st.number_input("Estimated Distance from Camera to Trajectory (m)", min_value=0.5, value=15.0, step=0.5)
+        hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
-    hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
-    
-    # Video Playback Speed Selector
-    slow_mo_options = {
-        "Normal (1x)": 1.0,
-        "Slow-mo (1/2x)": 0.5,
-        "Slow-mo (1/4x)": 0.25,
-        "Slow-mo (1/8x)": 0.125
-    }
-    selected_speed_label = st.selectbox("Video playback speed", list(slow_mo_options.keys()))
-    speed_factor = slow_mo_options[selected_speed_label]
-
-    if st.button("🔍 Run AI Tracking Analysis", type="primary"):
-        with st.spinner("Processing video frames and tracking ball trajectory using 20 cm reference..."):
+    if st.button("🤖 Run AI Ball Detection & Speed Estimation", type="primary"):
+        with st.spinner("Processing video frames with YOLO AI and 20 cm ball calibration... Please wait."):
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            
             if fps == 0:
-                fps = 30.0 # Fallback default
-
-            frame_count = 0
-            detected_positions = [] # Store (frame_idx, timestamp, radius_in_pixels)
+                fps = 30.0  # Fallback default
             
-            # Simple color/contour-based tracker demo loop (can be upgraded to YOLOv8 object detection)
+            prev_center = None
+            max_speed_kmh = 0.0
+            frame_count = 0
+            
+            # COCO dataset class 32 is 'sports ball' in standard YOLO models
+            SPORTS_BALL_CLASS_ID = 32 
+            known_diameter_m = known_ball_diameter_cm / 100.0
+
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
                 
-                timestamp = frame_count / fps
-                
-                # Convert frame to HSV to isolate moving object / ball characteristics if needed
-                # (Placeholder logic scanning for high-velocity round contours)
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                blur = cv2.GaussianBlur(gray, (9, 9), 2)
-                
-                # Detecting circles using HoughCircles as a baseline geometric tracker using 20cm scale validation
-                # Real-world scale calibration mapping pixels to meters can be derived here.
-                
                 frame_count += 1
+                
+                # Run YOLO object detection on the frame
+                results = model(frame, verbose=False)
+                
+                current_center = None
+                current_ball_pixels = 0
+                
+                for r in results:
+                    boxes = r.boxes
+                    for box in boxes:
+                        cls = int(box.cls[0])
+                        # Check if detected object is a sports ball and has sufficient confidence
+                        if cls == SPORTS_BALL_CLASS_ID and float(box.conf[0]) > 0.25:
+                            xyxy = box.xyxy[0].cpu().numpy()
+                            x1, y1, x2, y2 = xyxy
+                            
+                            # Calculate center (x, y) of the ball
+                            cx = int((x1 + x2) / 2)
+                            cy = int((y1 + y2) / 2)
+                            current_center = (cx, cy)
+                            
+                            # Use bounding box width/height to estimate ball pixel size diameter
+                            box_width = x2 - x1
+                            box_height = y2 - y1
+                            current_ball_pixels = max(box_width, box_height)
+                            break
+                
+                # Calculate speed dynamically using the 20 cm ball reference scale on consecutive frames
+                if prev_center is not None and current_center is not None and current_ball_pixels > 0:
+                    pixel_distance = np.linalg.norm(np.array(current_center) - np.array(prev_center))
+                    
+                    # Dynamic scale factor calculation: meters per pixel based on 20 cm reference width
+                    meters_per_pixel = known_diameter_m / current_ball_pixels
+                    
+                    distance_meters = pixel_distance * meters_per_pixel
+                    speed_mps = distance_meters * fps
+                    speed_kmh = speed_mps * 3.6
+                    
+                    # Filter out unrealistic outliers caused by detection jitter
+                    if speed_kmh > max_speed_kmh and speed_kmh < 180.0:
+                        max_speed_kmh = speed_kmh
+
+                if current_center is not None:
+                    prev_center = current_center
+
             cap.release()
-            
-            # Simulated auto-detected points for demonstration framework integration
-            # In production, these timestamps populate dynamically from the tracking array.
-            st.session_state.hit_time = round(float(total_frames / fps) * 0.3, 3)
-            st.session_state.landing_time = round(float(total_frames / fps) * 0.6, 3)
-            
-            st.success("AI Tracking Complete! Timestamps automatically populated below.")
 
-    st.markdown("---")
-
-    # Timestamps (Auto-filled by AI or manually edited)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.session_state.hit_time = st.number_input(
-            "📍 Mark Hit (seconds)", 
-            min_value=0.0, 
-            value=float(st.session_state.hit_time), 
-            step=0.001,
-            format="%.3f"
-        )
-    with col2:
-        st.session_state.landing_time = st.number_input(
-            "📍 Mark Landing (seconds)", 
-            min_value=0.0, 
-            value=float(st.session_state.landing_time), 
-            step=0.001,
-            format="%.3f"
-        )
-
-    st.markdown("---")
-
-    player_name = st.text_input("Player (optional)", placeholder="Player name")
-
-    if st.button("🚀 Calculate Speed", type="primary"):
-        raw_time_elapsed = st.session_state.landing_time - st.session_state.hit_time
-        real_time_elapsed = raw_time_elapsed * speed_factor
-        
-        if real_time_elapsed > 0:
-            speed_mps = distance / real_time_elapsed
-            speed_kmh = speed_mps * 3.6
-            speed_mph = speed_mps * 2.23694
-            
-            st.success("Calculation Successful!")
+            st.success("AI Analysis Complete!")
             res_col1, res_col2 = st.columns(2)
-            res_col1.metric("Calculated Speed (KM/H)", f"{speed_kmh:.2f} km/h")
-            res_col2.metric("Calculated Speed (MPH)", f"{speed_mph:.2f} mph")
-            
-            if player_name:
-                st.info(f"Recorded for player: **{player_name}** ({hit_type})")
-        else:
-            st.error("Error: 'Mark Landing' timestamp must occur *after* 'Mark Hit' timestamp.")
+            res_col1.metric("Peak AI-Detected Speed", f"{max_speed_kmh:.2f} km/h")
+            res_col2.metric("Total Frames Analyzed", frame_count)
 
 else:
     st.info("👆 Upload a video file above to start AI tracking.")

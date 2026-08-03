@@ -6,9 +6,9 @@ from ultralytics import YOLO
 from streamlit_image_coordinates import streamlit_image_coordinates
 
 # Page layout configuration
-st.set_page_config(page_title="Volleyball Speed Tracker - Click Calibration", page_icon="🏐", layout="centered")
+st.set_page_config(page_title="Volleyball Speed Tracker - Custom Calibration", page_icon="🏐", layout="centered")
 
-st.markdown("### 🏐 AI-Powered Volleyball Speed Tracker with Court Calibration")
+st.markdown("### 🏐 AI-Powered Volleyball Speed Tracker with Custom Calibration")
 
 @st.cache_resource
 def load_model():
@@ -30,36 +30,21 @@ if uploaded_file is not None:
     if ret:
         h, w, _ = first_frame.shape
 
-        st.subheader("📐 Step 1: Court Line Calibration")
-        st.info(f"Video Resolution: **{w} x {h} pixels**. Choose your reference line, select whether you are clicking Point 1 or Point 2, and click on the image below.")
+        st.subheader("📐 Step 1: Custom Object / Distance Calibration")
+        st.info(f"Video Resolution: **{w} x {h} pixels**. Click two points on any known object or distance reference (e.g., volleyball diameter = 0.2m, or a court line), then enter its real-world size below.")
 
+        # Flexible calibration inputs
         col_cal1, col_cal2 = st.columns(2)
         with col_cal1:
-            ref_line_type = st.selectbox(
-                "Select Reference Line to Measure",
-                [
-                    "9-Meter Half-Court Line (Center to Baseline)",
-                    "6-Meter Attack Line to Baseline",
-                    "3-Meter Attack Line to Center Line",
-                    "Custom Reference Line"
-                ]
-            )
+            reference_label = st.text_input("Description of Reference Object", value="Volleyball Diameter (0.2m)")
         with col_cal2:
-            if "9-Meter" in ref_line_type:
-                default_meters = 9.0
-            elif "6-Meter" in ref_line_type:
-                default_meters = 6.0
-            elif "3-Meter" in ref_line_type:
-                default_meters = 3.0
-            else:
-                default_meters = 5.0
-            known_meters = st.number_input("Real-World Length of this Line (meters)", value=default_meters, step=0.5)
+            known_meters = st.number_input("Real-World Length / Distance (meters)", value=0.2, step=0.05, format="%.3f")
 
         # Initialize session state safely
         if "p1" not in st.session_state:
-            st.session_state.p1 = (int(w * 0.3), int(h * 0.7))
+            st.session_state.p1 = (int(w * 0.4), int(h * 0.5))
         if "p2" not in st.session_state:
-            st.session_state.p2 = (int(w * 0.7), int(h * 0.7))
+            st.session_state.p2 = (int(w * 0.45), int(h * 0.5))
         if "active_point" not in st.session_state:
             st.session_state.active_point = "P1"
 
@@ -87,7 +72,6 @@ if uploaded_file is not None:
         cv2.circle(annotated_frame, p2, 10, (255, 0, 0), -1)
         cv2.putText(annotated_frame, "P2", (p2[0] - 15, p2[1] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
 
-        # Convert back to RGB for Streamlit
         annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
 
         # Interactive Image Display
@@ -113,10 +97,10 @@ if uploaded_file is not None:
         ref_pixel_length = np.sqrt((x2_ref - x1_ref)**2 + (y2_ref - y1_ref)**2)
         if ref_pixel_length > 0:
             calibrated_meters_per_pixel = known_meters / ref_pixel_length
-            st.success(f"Calibration successful! Scale factor locked at: **{calibrated_meters_per_pixel:.6f} meters/pixel** (Line length: {ref_pixel_length:.1f} pixels)")
+            st.success(f"Calibration successful! Scale factor locked at: **{calibrated_meters_per_pixel:.6f} meters/pixel** (Span length: {ref_pixel_length:.1f} pixels)")
         else:
             calibrated_meters_per_pixel = 0.0
-            st.warning("Reference line pixel length is 0. Please select two distinct points.")
+            st.warning("Reference span pixel length is 0. Please select two distinct points.")
 
     st.markdown("---")
     st.subheader("⚙️ Step 2: Detection & Timing Settings")
@@ -141,7 +125,7 @@ if uploaded_file is not None:
         if ref_pixel_length <= 0:
             st.error("Please click two distinct reference points on the image first.")
         else:
-            with st.spinner("Processing video frames with custom model and calibrated scale... Please wait."):
+            with st.spinner("Processing video frames with custom model, trajectory rendering, and calibrated scale... Please wait."):
                 cap = cv2.VideoCapture(video_path)
                 detected_container_fps = cap.get(cv2.CAP_PROP_FPS)
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -190,12 +174,11 @@ if uploaded_file is not None:
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
 
-                    # Draw the full trajectory path connecting all tracked frame centers so far
+                    # Draw full trajectory trail connecting all tracked frame centers
                     if len(centers) > 1:
                         for i in range(1, len(centers)):
                             pt1 = (centers[i-1][1], centers[i-1][2])
                             pt2 = (centers[i][1], centers[i][2])
-                            # Draw a bright cyan line tracking the ball's flight path
                             cv2.line(frame, pt1, pt2, (255, 255, 0), 3)
 
                     out.write(frame)
@@ -205,7 +188,7 @@ if uploaded_file is not None:
 
                 st.success("Analysis Complete!")
 
-                st.subheader("🎥 Annotated AI Detection Preview")
+                st.subheader("🎥 Annotated AI Detection & Trajectory Preview")
                 with open(output_preview_path, 'rb') as video_file:
                     video_bytes = video_file.read()
                 st.video(video_bytes, format="video/webm")
@@ -237,8 +220,8 @@ if uploaded_file is not None:
                     res_col2.metric("Total Frames Tracked", len(centers))
 
                     with st.expander("🔍 View Raw Tracking & Math Details"):
-                        st.write(f"- **Calibration Reference Line:** {ref_line_type} ({known_meters}m)")
-                        st.write(f"- **Reference Line Pixel Length:** {ref_pixel_length:.1f} px")
+                        st.write(f"- **Reference Object:** {reference_label} ({known_meters}m)")
+                        st.write(f"- **Reference Span Pixel Length:** {ref_pixel_length:.1f} px")
                         st.write(f"- **Calibrated Scale Factor:** {calibrated_meters_per_pixel:.6f} meters/pixel")
                         st.write(f"- **Forced True Recording FPS:** {true_fps}")
                         st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")

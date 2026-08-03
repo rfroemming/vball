@@ -29,12 +29,15 @@ if uploaded_file is not None:
     st.markdown("---")
 
     # Configuration Inputs
-    col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+    col_cfg1, col_cfg2, col_cfg3, col_cfg4 = st.columns(4)
     with col_cfg1:
-        known_distance_meters = st.number_input("Total Ball Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
+        known_distance_meters = st.number_input("Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
     with col_cfg2:
-        true_fps = st.number_input("Recording Frame Rate (FPS)", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
+        true_fps = st.number_input("Recording FPS", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
     with col_cfg3:
+        # Adjustable confidence slider to catch blurred/fast-moving balls
+        conf_threshold = st.slider("YOLO Confidence", min_value=0.05, max_value=0.50, value=0.15, step=0.05, help="Lower values help detect fast, blurred balls.")
+    with col_cfg4:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
     slow_mo_options = {
@@ -47,7 +50,7 @@ if uploaded_file is not None:
     speed_factor = slow_mo_options[selected_speed_label]
 
     if st.button("🤖 Run AI Detection & Show Preview", type="primary"):
-        with st.spinner("Processing frames, running YOLO detection, and generating preview... Please wait."):
+        with st.spinner("Processing frames with lowered confidence filter... Please wait."):
             cap = cv2.VideoCapture(video_path)
             detected_container_fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -55,7 +58,7 @@ if uploaded_file is not None:
             if detected_container_fps == 0:
                 detected_container_fps = 30.0
 
-            # Use WebM (.webm) with VP80 codec for universal browser playback compatibility
+            # Use WebM format for smooth browser playback
             output_preview_path = tempfile.NamedTemporaryFile(delete=False, suffix='.webm').name
             fourcc = cv2.VideoWriter_fourcc(*'VP80')
             out = cv2.VideoWriter(output_preview_path, fourcc, detected_container_fps, (width, height))
@@ -70,26 +73,36 @@ if uploaded_file is not None:
                     break
                 
                 frame_count += 1
+                # Run YOLO on the frame
                 results = model(frame, verbose=False)
                 
+                best_box = None
+                highest_conf = 0.0
+
                 for r in results:
                     boxes = r.boxes
                     for box in boxes:
                         cls = int(box.cls[0])
                         conf = float(box.conf[0])
-                        if cls == SPORTS_BALL_CLASS_ID and conf > 0.25:
-                            xyxy = box.xyxy[0].cpu().numpy()
-                            x1, y1, x2, y2 = map(int, xyxy)
-                            cx = int((x1 + x2) / 2)
-                            cy = int((y1 + y2) / 2)
-                            
-                            centers.append((frame_count, cx, cy))
+                        # Filter for sports ball using the adjustable confidence threshold
+                        if cls == SPORTS_BALL_CLASS_ID and conf >= conf_threshold:
+                            if conf > highest_conf:
+                                highest_conf = conf
+                                best_box = box.xyxy[0].cpu().numpy()
 
-                            # Draw visual bounding box and center dot on frame for preview
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
-                            cv2.putText(frame, f"Ball Conf: {conf:.2f}", (x1, y1 - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                # If a ball was found in this frame, record and draw it
+                if best_box is not None:
+                    x1, y1, x2, y2 = map(int, best_box)
+                    cx = int((x1 + x2) / 2)
+                    cy = int((y1 + y2) / 2)
+                    
+                    centers.append((frame_count, cx, cy))
+
+                    # Draw visual bounding box and center dot
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.circle(frame, (cx, cy), 5, (0, 0, 255), -1)
+                    cv2.putText(frame, f"Ball {highest_conf:.2f}", (x1, y1 - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
                 out.write(frame)
 
@@ -98,14 +111,14 @@ if uploaded_file is not None:
 
             st.success("AI Preview Generation Complete!")
 
-            # Display Annotated Video Preview using WebM bytes format
+            # Display Annotated Video Preview
             st.subheader("🎥 Annotated YOLO Detection Preview")
             with open(output_preview_path, 'rb') as video_file:
                 video_bytes = video_file.read()
             st.video(video_bytes, format="video/webm")
 
-            if len(centers) < 2:
-                st.error("Could not track the ball across enough consecutive frames. Try lowering confidence thresholds or using a clearer angle.")
+            if len(centers) < 5:
+                st.error(f"Only {len(centers)} frames tracked. Try lowering the YOLO Confidence slider further (e.g., to 0.05) or check if the ball is clear in the video.")
             else:
                 # Calculations using true_fps
                 max_pixel_speed = 0.0
@@ -139,7 +152,7 @@ if uploaded_file is not None:
                 res_col2.metric("Total Frames Tracked", len(centers))
 
                 with st.expander("🔍 View Raw Tracking & Math Details"):
-                    st.write(f"- **Detected Container FPS:** {detected_container_fps:.2f}")
+                    st.write(f"- **YOLO Confidence Threshold Used:** {conf_threshold}")
                     st.write(f"- **Forced True Recording FPS:** {true_fps}")
                     st.write(f"- **Total Pixel Span of Trajectory:** {total_pixel_span:.2f} px")
                     st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")

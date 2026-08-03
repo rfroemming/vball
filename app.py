@@ -35,8 +35,20 @@ if uploaded_file is not None:
     with col_cfg2:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
+    # Slow-motion multiplier configuration
+    slow_mo_options = {
+        "Normal (1x)": 1.0,
+        "Slow-mo (1/2x)": 0.5,
+        "Slow-mo (1/4x)": 0.25,
+        "Slow-mo (1/8x)": 0.125
+    }
+    selected_speed_label = st.selectbox("Video recording slow-motion factor", list(slow_mo_options.keys()))
+    speed_factor = slow_mo_options[selected_speed_label]
+    
+    st.caption("Adjust this factor if the video was shot in slow motion so the AI scales the time and velocity correctly.")
+
     if st.button("🤖 Run AI Ball Detection & Speed Estimation", type="primary"):
-        with st.spinner("Processing video frames with YOLO AI and 20 cm ball calibration... Please wait."):
+        with st.spinner("Processing video frames with YOLO AI and slow-motion scaling... Please wait."):
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps == 0:
@@ -83,7 +95,7 @@ if uploaded_file is not None:
                             current_ball_pixels = max(box_width, box_height)
                             break
                 
-                # Calculate speed dynamically using the 20 cm ball reference scale on consecutive frames
+                # Calculate speed dynamically using the 20 cm reference scale and slow-motion factor
                 if prev_center is not None and current_center is not None and current_ball_pixels > 0:
                     pixel_distance = np.linalg.norm(np.array(current_center) - np.array(prev_center))
                     
@@ -91,7 +103,9 @@ if uploaded_file is not None:
                     meters_per_pixel = known_diameter_m / current_ball_pixels
                     
                     distance_meters = pixel_distance * meters_per_pixel
-                    speed_mps = distance_meters * fps
+                    
+                    # Account for slow-motion factor in time-per-frame calculation
+                    speed_mps = (distance_meters * fps) * speed_factor
                     speed_kmh = speed_mps * 3.6
                     
                     # Filter out unrealistic outliers caused by detection jitter

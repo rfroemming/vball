@@ -32,9 +32,32 @@ if uploaded_file is not None:
         h, w, _ = first_frame.shape
 
         st.subheader("📐 Step 1: Court Line Calibration")
-        st.info(f"Video Resolution: **{w} x {h} pixels**. Click the start and end points of your reference line on the image below.")
+        st.info(f"Video Resolution: **{w} x {h} pixels**. Choose your reference line and click its endpoints on the image below.")
 
- # Initialize session state safely
+        # 1. Define inputs FIRST so variables exist globally
+        col_cal1, col_cal2 = st.columns(2)
+        with col_cal1:
+            ref_line_type = st.selectbox(
+                "Select Reference Line to Measure",
+                [
+                    "9-Meter Half-Court Line (Center to Baseline)",
+                    "6-Meter Attack Line to Baseline",
+                    "3-Meter Attack Line to Center Line",
+                    "Custom Reference Line"
+                ]
+            )
+        with col_cal2:
+            if "9-Meter" in ref_line_type:
+                default_meters = 9.0
+            elif "6-Meter" in ref_line_type:
+                default_meters = 6.0
+            elif "3-Meter" in ref_line_type:
+                default_meters = 3.0
+            else:
+                default_meters = 5.0
+            known_meters = st.number_input("Real-World Length of this Line (meters)", value=default_meters, step=0.5)
+
+        # 2. Initialize session state safely
         if "p1" not in st.session_state:
             st.session_state.p1 = (int(w * 0.3), int(h * 0.7))
         if "p2" not in st.session_state:
@@ -60,7 +83,6 @@ if uploaded_file is not None:
             orig_x = int(coords["x"] * scale_percent)
             orig_y = int(coords["y"] * scale_percent)
 
-            # Update only the active point chosen by the user's button
             if st.session_state.active_point == "P1":
                 if st.session_state.p1 != (orig_x, orig_y):
                     st.session_state.p1 = (orig_x, orig_y)
@@ -73,27 +95,13 @@ if uploaded_file is not None:
         x1_ref, y1_ref = st.session_state.p1
         x2_ref, y2_ref = st.session_state.p2
 
-        # Display chosen points and allow manual tweaks if needed
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            st.markdown(f"**Point 1 (Start):** {st.session_state.p1}")
-            if st.button("Reset Point 1 to Click Next"):
-                st.session_state.click_step = "P1"
-                st.rerun()
-        with col_p2:
-            st.markdown(f"**Point 2 (End):** {st.session_state.p2}")
-            if st.button("Reset Point 2 to Click Next"):
-                st.session_state.click_step = "P2"
-                st.rerun()
-
-        x1_ref, y1_ref = st.session_state.p1
-        x2_ref, y2_ref = st.session_state.p2
-
+        # 3. Calculation now runs safely with known_meters already declared
         ref_pixel_length = np.sqrt((x2_ref - x1_ref)**2 + (y2_ref - y1_ref)**2)
         if ref_pixel_length > 0:
             calibrated_meters_per_pixel = known_meters / ref_pixel_length
             st.success(f"Calibration successful! Scale factor locked at: **{calibrated_meters_per_pixel:.6f} meters/pixel** (Line length: {ref_pixel_length:.1f} pixels)")
         else:
+            calibrated_meters_per_pixel = 0.0
             st.warning("Reference line pixel length is 0. Please select two distinct points.")
 
     st.markdown("---")

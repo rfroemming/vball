@@ -27,20 +27,28 @@ if uploaded_file is not None:
         video_bytes = f.read()
     video_base64 = base64.b64encode(video_bytes).decode('utf-8')
 
-    st.info("💡 **Tip:** Pause the video at the exact moment and copy the millisecond timestamp shown in the box below into your inputs.")
+    st.info("💡 **Tip:** Pause or scrub the video to the exact moment and click the capture buttons below the video.")
 
-    # Custom HTML5 Video Player with a live millisecond tracker box
+    # Custom HTML5 Video Player with Live Tracker and Action Buttons
     player_html = f"""
     <div style="background-color: #161b22; padding: 15px; border-radius: 10px; border: 1px solid #30363d; font-family: sans-serif;">
         <video id="vid" width="100%" controls style="border-radius: 8px;">
             <source src="data:video/mp4;base64,{video_base64}" type="video/mp4">
             Your browser does not support the video tag.
         </video>
-        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 12px 15px; border-radius: 6px; border: 1px solid #21262d;">
-            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">CURRENT EXACT POSITION:</span>
+        
+        <!-- Live Position Display & Buttons -->
+        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; background: #0d1117; padding: 10px 15px; border-radius: 6px; border: 1px solid #21262d;">
+            <span style="color: #8b949e; font-family: monospace; font-size: 13px; font-weight: bold;">POSITION:</span>
             <span id="time-display" style="color: #58a6ff; font-family: monospace; font-size: 18px; font-weight: bold;">0.000 s</span>
         </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="captureTime('hit')" style="flex: 1; background-color: #238636; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Hit</button>
+            <button onclick="captureTime('landing')" style="flex: 1; background-color: #da3633; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">📍 Capture Mark Landing</button>
+        </div>
     </div>
+    
     <script>
         const video = document.getElementById('vid');
         const timeDisplay = document.getElementById('time-display');
@@ -48,15 +56,31 @@ if uploaded_file is not None:
         video.addEventListener('timeupdate', function() {{
             timeDisplay.innerText = video.currentTime.toFixed(3) + " s";
         }});
+
+        function captureTime(type) {{
+            const currentTime = video.currentTime;
+            // Send value securely back to Streamlit parent container
+            const data = {{type: type, time: currentTime}};
+            window.parent.postMessage({{isStreamlitMessage: true, type: 'streamlit:setComponentValue', value: data}}, "*");
+        }}
     </script>
     """
     
-    # Render the custom component box with an increased height (420px) so nothing gets cut off
-    components.html(player_html, height=420)
+    # Render component and capture clicks
+    val = components.html(player_html, height=480)
+
+    # Listen for button clicks sent back from JavaScript component
+    if val is not None and isinstance(val, dict):
+        if val.get('type') == 'hit':
+            st.session_state.hit_time = round(val.get('time', 0.0), 3)
+            st.rerun()
+        elif val.get('type') == 'landing':
+            st.session_state.landing_time = round(val.get('time', 0.0), 3)
+            st.rerun()
 
     st.markdown("---")
 
-    # Timestamps inputs
+    # Timestamps inputs (reflecting captured or manually typed values)
     col1, col2 = st.columns(2)
     with col1:
         st.session_state.hit_time = st.number_input(

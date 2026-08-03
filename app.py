@@ -2,6 +2,7 @@ import streamlit as st
 import tempfile
 import cv2
 import numpy as np
+from collections import deque
 from ultralytics import YOLO
 
 # Page layout configuration
@@ -28,10 +29,11 @@ if uploaded_file is not None:
     st.video(video_path)
     st.markdown("---")
 
-    # Configuration options using 20 cm ball size reference
+    # Reliable Calibration Inputs
     col_cfg1, col_cfg2 = st.columns(2)
     with col_cfg1:
-        known_ball_diameter_cm = st.number_input("Known Ball Diameter (cm)", value=20.0, step=0.5)
+        # Instead of ball size, use a fixed distance scale reference (e.g., total estimated travel distance or calibration span)
+        known_distance_meters = st.number_input("Total Estimated Ball Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
     with col_cfg2:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
@@ -44,23 +46,17 @@ if uploaded_file is not None:
     }
     selected_speed_label = st.selectbox("Video recording slow-motion factor", list(slow_mo_options.keys()))
     speed_factor = slow_mo_options[selected_speed_label]
-    
-    st.caption("Adjust this factor if the video was shot in slow motion so the AI scales the time and velocity correctly.")
 
     if st.button("🤖 Run AI Ball Detection & Speed Estimation", type="primary"):
-        with st.spinner("Processing video frames with YOLO AI and slow-motion scaling... Please wait."):
+        with st.spinner("Processing video frames with YOLO AI and stabilizing trajectory... Please wait."):
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             if fps == 0:
                 fps = 30.0  # Fallback default
             
-            prev_center = None
-            max_speed_kmh = 0.0
+            centers = []
             frame_count = 0
-            
-            # COCO dataset class 32 is 'sports ball' in standard YOLO models
             SPORTS_BALL_CLASS_ID = 32 
-            known_diameter_m = known_ball_diameter_cm / 100.0
 
             while cap.isOpened():
                 ret, frame = cap.read()
@@ -68,59 +64,51 @@ if uploaded_file is not None:
                     break
                 
                 frame_count += 1
-                
-                # Run YOLO object detection on the frame
                 results = model(frame, verbose=False)
-                
-                current_center = None
-                current_ball_pixels = 0
                 
                 for r in results:
                     boxes = r.boxes
                     for box in boxes:
                         cls = int(box.cls[0])
-                        # Check if detected object is a sports ball and has sufficient confidence
-                        if cls == SPORTS_BALL_CLASS_ID and float(box.conf[0]) > 0.25:
+                        if cls == SPORTS_BALL_CLASS_ID and float(box.conf[0]) > 0.3:
                             xyxy = box.xyxy[0].cpu().numpy()
-                            x1, y1, x2, y2 = xyxy
-                            
-                            # Calculate center (x, y) of the ball
-                            cx = int((x1 + x2) / 2)
-                            cy = int((y1 + y2) / 2)
-                            current_center = (cx, cy)
-                            
-                            # Use bounding box width/height to estimate ball pixel size diameter
-                            box_width = x2 - x1
-                            box_height = y2 - y1
-                            current_ball_pixels = max(box_width, box_height)
+                            cx = int((xyxy[0] + xyxy[2]) / 2)
+                            cy = int((xyxy[1] + xyxy[3]) / 2)
+                            centers.append((frame_count, cx, cy))
                             break
-                
-                # Calculate speed dynamically using the 20 cm reference scale and slow-motion factor
-                if prev_center is not None and current_center is not None and current_ball_pixels > 0:
-                    pixel_distance = np.linalg.norm(np.array(current_center) - np.array(prev_center))
-                    
-                    # Dynamic scale factor calculation: meters per pixel based on 20 cm reference width
-                    meters_per_pixel = known_diameter_m / current_ball_pixels
-                    
-                    distance_meters = pixel_distance * meters_per_pixel
-                    
-                    # Account for slow-motion factor in time-per-frame calculation
-                    speed_mps = (distance_meters * fps) * speed_factor
-                    speed_kmh = speed_mps * 3.6
-                    
-                    # Filter out unrealistic outliers caused by detection jitter
-                    if speed_kmh > max_speed_kmh and speed_kmh < 180.0:
-                        max_speed_kmh = speed_kmh
-
-                if current_center is not None:
-                    prev_center = current_center
 
             cap.release()
 
-            st.success("AI Analysis Complete!")
-            res_col1, res_col2 = st.columns(2)
-            res_col1.metric("Peak AI-Detected Speed", f"{max_speed_kmh:.2f} km/h")
-            res_col2.metric("Total Frames Analyzed", frame_count)
+            if len(centers) < 2:
+                st.error("Could not track the ball across enough frames. Try adjusting confidence or ensuring the ball is clearly visible.")
+            else:
+                # Find the maximum displacement vector (peak velocity segment between consecutive tracked frames)
+                max_pixel_speed = 0.0
+                for i in range(1, len(centers)):
+                    f1, x1, y1 = centers[i-1]
+                    f2, x2, y2 = centers[i]
+                    
+                    frame_diff = f2 - f1
+                    if frame_diff > 0:
+                        pix_dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                        pix_speed_per_frame = pix_dist / frame_diff
+                        if pix_speed_per_frame > max_pixel_speed:
+                            max_pixel_speed = pix_speed_per_frame
+
+                # Approximate total pixel span of the trajectory for scaling
+                total_pixel_span = np.sum([np.sqrt((centers[i][1]-centers[i-1][1])**2 + (centers[i][2]-centers[i-1][2])**2) for i in range(1, len(centers))])
+                
+                if total_pixel_span > 0:
+                    meters_per_pixel = known_distance_meters / total_pixel_span
+                    peak_mps = (max_pixel_speed * fps * meters_per_pixel) * speed_factor
+                    max_speed_kmh = peak_mps * 3.6
+                else:
+                    max_speed_kmh = 0.0
+
+                st.success("AI Analysis Complete!")
+                res_col1, res_col2 = st.columns(2)
+                res_col1.metric("Estimated Peak Speed", f"{max_speed_kmh:.2f} km/h")
+                res_col2.metric("Frames Tracked", len(centers))
 
 else:
     st.info("👆 Upload a video file above to start AI tracking.")

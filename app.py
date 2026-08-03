@@ -29,41 +29,36 @@ if uploaded_file is not None:
     st.markdown("---")
 
     # Configuration Inputs
-    col_cfg1, col_cfg2 = st.columns(2)
+    col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
     with col_cfg1:
-        known_distance_meters = st.number_input("Total Estimated Ball Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
+        known_distance_meters = st.number_input("Total Ball Flight Distance (m)", value=5.0, step=0.5, help="Approximate distance the ball travels from hit to landing.")
     with col_cfg2:
+        true_fps = st.number_input("Recording Frame Rate (FPS)", value=240.0, step=10.0, help="Set to 240 if recorded in 240fps slow-motion.")
+    with col_cfg3:
         hit_type = st.selectbox("Hit type", ["Serve", "Spike", "Pass", "Setter Dump"])
 
-    # Slow-motion multiplier configuration
     slow_mo_options = {
-        "Normal (1x)": 1.0,
-        "Slow-mo (1/2x)": 0.5,
-        "Slow-mo (1/4x)": 0.25,
-        "Slow-mo (1/8x)": 0.125
+        "Standard (1x - Use with True FPS)": 1.0,
+        "Slow-mo export factor (1/2x)": 0.5,
+        "Slow-mo export factor (1/4x)": 0.25,
+        "Slow-mo export factor (1/8x)": 0.125
     }
-    selected_speed_label = st.selectbox("Video recording slow-motion factor", list(slow_mo_options.keys()))
+    selected_speed_label = st.selectbox("Timeline Playback Speed Multiplier", list(slow_mo_options.keys()))
     speed_factor = slow_mo_options[selected_speed_label]
 
     if st.button("🤖 Run AI Detection & Show Preview", type="primary"):
         with st.spinner("Processing frames, running YOLO detection, and generating preview... Please wait."):
             cap = cv2.VideoCapture(video_path)
-            fps = cap.get(cv2.CAP_PROP_FPS)
+            detected_container_fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            if fps == 0:
-                fps = 30.0
+            if detected_container_fps == 0:
+                detected_container_fps = 30.0
 
-            # Use VP09 or avc1 codec for universal browser compatibility
-            output_preview_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-            
-            # Try H.264 (avc1) first, fallback to mp4v if unavailable
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')
-            out = cv2.VideoWriter(output_preview_path, fourcc, fps, (width, height))
-            
-            if not out.isOpened():
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out = cv2.VideoWriter(output_preview_path, fourcc, fps, (width, height))
+            # Use WebM (.webm) with VP80 codec for universal browser playback compatibility
+            output_preview_path = tempfile.NamedTemporaryFile(delete=False, suffix='.webm').name
+            fourcc = cv2.VideoWriter_fourcc(*'VP80')
+            out = cv2.VideoWriter(output_preview_path, fourcc, detected_container_fps, (width, height))
 
             centers = []
             frame_count = 0
@@ -96,7 +91,6 @@ if uploaded_file is not None:
                             cv2.putText(frame, f"Ball Conf: {conf:.2f}", (x1, y1 - 10),
                                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-                # Write annotated frame to preview video
                 out.write(frame)
 
             cap.release()
@@ -104,16 +98,16 @@ if uploaded_file is not None:
 
             st.success("AI Preview Generation Complete!")
 
-            # Display Annotated Video Preview with browser-supported format reading
+            # Display Annotated Video Preview using WebM bytes format
             st.subheader("🎥 Annotated YOLO Detection Preview")
             with open(output_preview_path, 'rb') as video_file:
                 video_bytes = video_file.read()
-            st.video(video_bytes)
+            st.video(video_bytes, format="video/webm")
 
             if len(centers) < 2:
                 st.error("Could not track the ball across enough consecutive frames. Try lowering confidence thresholds or using a clearer angle.")
             else:
-                # Calculations
+                # Calculations using true_fps
                 max_pixel_speed = 0.0
                 best_segment = (0, 0)
                 for i in range(1, len(centers)):
@@ -131,7 +125,7 @@ if uploaded_file is not None:
                 
                 if total_pixel_span > 0:
                     meters_per_pixel = known_distance_meters / total_pixel_span
-                    peak_mps = (max_pixel_speed * fps * meters_per_pixel) * speed_factor
+                    peak_mps = (max_pixel_speed * true_fps * meters_per_pixel) * speed_factor
                     max_speed_kmh = peak_mps * 3.6
                 else:
                     max_speed_kmh = 0.0
@@ -145,8 +139,8 @@ if uploaded_file is not None:
                 res_col2.metric("Total Frames Tracked", len(centers))
 
                 with st.expander("🔍 View Raw Tracking & Math Details"):
-                    st.write(f"- **Video Base FPS:** {fps}")
-                    st.write(f"- **Slow-mo Multiplier Applied:** {speed_factor}x")
+                    st.write(f"- **Detected Container FPS:** {detected_container_fps:.2f}")
+                    st.write(f"- **Forced True Recording FPS:** {true_fps}")
                     st.write(f"- **Total Pixel Span of Trajectory:** {total_pixel_span:.2f} px")
                     st.write(f"- **Max Frame-to-Frame Displacement:** {max_pixel_speed:.2f} pixels/frame (between frames {best_segment[0]} and {best_segment[1]})")
                     st.write(f"- **Estimated Scale Factor:** {meters_per_pixel:.6f} meters/pixel")

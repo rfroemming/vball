@@ -33,11 +33,8 @@ if uploaded_file is not None:
         st.subheader("📐 Step 1: Custom Object / Distance Calibration")
         st.info(f"Video Resolution: **{w} x {h} pixels**. Click two points on any known object or distance reference, then enter its real-world size below.")
 
-        col_cal1, col_cal2 = st.columns(2)
-        with col_cal1:
-            reference_label = st.text_input("Description of Reference Object", value="Volleyball Diameter (0.2m)")
-        with col_cal2:
-            known_meters = st.number_input("Real-World Length / Distance (meters)", value=0.2, step=0.05, format="%.3f")
+        # Single calibration input for the known distance
+        known_meters = st.number_input("Real-World Length / Distance of Reference (meters)", value=6.0, step=0.5, format="%.2f")
 
         if "p1" not in st.session_state:
             st.session_state.p1 = (int(w * 0.4), int(h * 0.5))
@@ -98,7 +95,6 @@ if uploaded_file is not None:
     st.markdown("---")
     st.subheader("⚙️ Step 2: Video Speed Settings")
     
-    # Simplified speed mode selector for standard vs slow-motion footage
     speed_mode = st.radio(
         "Video Recording Mode",
         ["Standard Speed (30 FPS)", "Slow Motion (0.25x / 120-240 FPS handled via multiplier)"],
@@ -106,8 +102,7 @@ if uploaded_file is not None:
     )
     
     if "Slow Motion" in speed_mode:
-        # For 0.25x slow motion, effective speed is scaled accordingly
-        effective_fps = 120.0  # Equivalent timeline frame rate multiplier
+        effective_fps = 120.0  
     else:
         effective_fps = 30.0
 
@@ -130,7 +125,7 @@ if uploaded_file is not None:
                 centers = []
                 frame_count = 0
                 CUSTOM_CLASS_ID = 0 
-                conf_threshold = 0.10 # Default fixed confidence threshold
+                conf_threshold = 0.10
 
                 while cap.isOpened():
                     ret, frame = cap.read()
@@ -187,6 +182,10 @@ if uploaded_file is not None:
                 else:
                     max_pixel_speed = 0.0
                     best_segment = (0, 0)
+                    
+                    # Lists to calculate horizontal-dominant movement vector averages
+                    horizontal_speeds = []
+
                     for i in range(1, len(centers)):
                         f1, x1, y1 = centers[i-1]
                         f2, x2, y2 = centers[i]
@@ -194,6 +193,14 @@ if uploaded_file is not None:
                         if frame_diff > 0:
                             pix_dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
                             pix_speed_per_frame = pix_dist / frame_diff
+                            
+                            # Check if movement is primarily horizontal (dx > abs(dy) or minor vertical change)
+                            dx = abs(x2 - x1)
+                            dy = abs(y2 - y1)
+                            if dx >= dy:  # Horizontal direction dominant phase
+                                segment_mps = (pix_speed_per_frame * effective_fps) * calibrated_meters_per_pixel
+                                horizontal_speeds.append(segment_mps)
+
                             if pix_speed_per_frame > max_pixel_speed:
                                 max_pixel_speed = pix_speed_per_frame
                                 best_segment = (f1, f2)
@@ -201,15 +208,18 @@ if uploaded_file is not None:
                     peak_mps = max_pixel_speed * effective_fps * calibrated_meters_per_pixel
                     max_speed_kmh = peak_mps * 3.6
 
+                    # Compute average horizontal flight speed if available
+                    avg_horizontal_kmh = (np.mean(horizontal_speeds) * 3.6) if horizontal_speeds else max_speed_kmh
+
                     st.markdown("---")
                     st.subheader("📊 Calculation Data Breakdown")
                     
                     res_col1, res_col2 = st.columns(2)
                     res_col1.metric("Calculated Peak Speed", f"{max_speed_kmh:.2f} km/h")
-                    res_col2.metric("Total Frames Tracked", len(centers))
+                    
 
                     with st.expander("🔍 View Raw Tracking & Math Details"):
-                        st.write(f"- **Reference Object:** {reference_label} ({known_meters}m)")
+                        st.write(f"- **Reference Object:** ({known_meters}m)")
                         st.write(f"- **Reference Span Pixel Length:** {ref_pixel_length:.1f} px")
                         st.write(f"- **Calibrated Scale Factor:** {calibrated_meters_per_pixel:.6f} meters/pixel")
                         st.write(f"- **Effective FPS Used:** {effective_fps}")
